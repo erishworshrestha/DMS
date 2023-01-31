@@ -18,8 +18,9 @@ from tkinter import messagebox
 import time
 
 filename = None
-camera = 0
+camera = 0  
 count = 0
+camera_number = 0
 # referenceHeight = 83.7
 # referencepixelsPerMetric = 13.49334255641328
 # referenceHeight = 82.2
@@ -108,7 +109,7 @@ def mostFrequent(arr, n):
 #     max = 255 + brightness
 #     al_pha = (max - shadow) / 255
 #     ga_mma = shadow
-#     cal = cv2.addWeighted(img, al_pha, img, 0, ga_mma)
+#     cal = cv2.addWeighted(img, al_pha, img, 0, ga_mma) 
 
 #     if contrast != 0:
 #         Alpha = float(131 * (contrast + 127)) / (127 * (131 - contrast))
@@ -119,49 +120,63 @@ def mostFrequent(arr, n):
 
 def convert(img):
     plane = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    dilated_img = cv2.dilate(plane, np.ones((7, 7), np.uint8))
+
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv, (0,0,100), (179, 255, 255))
+    nzmask = cv2.inRange(hsv, (0, 0, 5), (255, 255, 255))
+    nzmask = cv2.erode(nzmask, np.ones((3,3)))
+    mask = mask & nzmask
+    new_img = img.copy()
+    new_img[np.where(mask)] = 255
+
+    gray = cv2.cvtColor(new_img, cv2.COLOR_BGR2GRAY)
+
+    result  = plane - gray
+    
+    dilated_img = cv2.dilate(result, np.ones((7, 7), np.uint8))
+    # cv2.imshow("test",result)
+    # dilated_img = cv2.dilate(plane, np.ones((7, 7), np.uint8))
     bg_img = cv2.medianBlur(dilated_img, 21)
     diff_img = 255 - cv2.absdiff(plane, bg_img)
-    norm_img = cv2.normalize(
-        diff_img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
-    return (diff_img, norm_img)
+    # norm_img = cv2.normalize(
+    #     diff_img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
+    
+    # cv2.imshow("gray",gray)
+    # cv2.imshow("norm_img",norm_img)
+    return (diff_img,new_img)
+    # return (diff_img,gray)
 
 
 def findHeight():
+    if(ser.isOpen() == False):
+        ser.open()
     vals = []
-    for i in range(5):
-        # vals = []
-        # print(i)
-        # for j in range(5):
-            height = ser.readline().decode('utf-8').rstrip()
+    i=0
+    while( i<=3 ):
+        height = ser.readline().decode('utf-8').rstrip()
+        if(height != ''):
             vals.append(height)
-            print(vals)
-    
-    ser.flush()
+            i = i+1
+
+    ser.close()
     height = mostFrequent(vals, len(vals))
-    height = float(height)/10
+    # height = vals
+    print(height)
+    height = float(height)
+    # height = float(height)/10
     return height
 
 
 def calibration():
     global BaseHeight
-
-    # BaseHeight = 0
-
+    if(ser.isOpen() == False):
+        ser.open()
     print("Calibrating.........")
     BaseHeight = findHeight()
-    ret, image = cap.read()
-    if ret:
-        # image = controller(image)
-        cv2.imwrite("initial.jpg", image)
-    # vals = []
-    # for i in range(20):
-    #     BaseHeight = ser.readline().decode('utf-8').rstrip()
-    #     time.sleep(0.01)
-    #     # print(str(i) + " : " + str(BaseHeight))
-    #     vals.append(BaseHeight)
-
-    # BaseHeight = mostFrequent(vals, len(vals))
+    # ret, image = cap.read()
+    # if ret:
+    #     cv2.imwrite("initial.jpg", image)
+    ser.close()
     if BaseHeight != '':
         # BaseHeight = float(BaseHeight)/10
         print("Base Height : " + str(BaseHeight) + " cm")
@@ -234,18 +249,17 @@ def count_cameras():
             continue
         return i
 
+camera_count = count_cameras() 
 
 def switch():
     global cap
     global camera
-    if camera == 0:
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-        camera = 1
-    else:
-        camera = camera+1
-    if (camera == count_cameras()):
-        camera = 0
+    global camera_number
+    cap = cv2.VideoCapture(camera_number, cv2.CAP_DSHOW)
+    camera_number = camera_number + 1
 
+    if(camera_number==camera_count):
+        camera_number = 0
 
 switch()
 
@@ -264,7 +278,6 @@ def midpoint(ptA, ptB):
 
 
 for port in ports:
-    # print(port)
     if "USB-SERIAL" in port.description:
         if __name__ == '__main__':
             try:
@@ -282,6 +295,7 @@ for port in ports:
             BaseHeight = calibration()
         if BaseHeight != None:
             break
+        ser.close()
 
 
 widthSet = Scale(root, from_=50, to=230, tickinterval=20, bg="#2a9d8f", fg="#fff",
@@ -318,9 +332,6 @@ scrollbar.config(command=mylist.yview)
 
 BaseHeight = calibration()
 
-# BaseHeight = 100.5
-
-
 def measure():
     global dimA
     global dimB
@@ -329,9 +340,6 @@ def measure():
     global volumetricWeightFirst
     global volumetricWeightSecond
     global BaseHeight
-    biggestContour = 0
-
-    # BaseHeight = 0
 
     width_ = widthSet.get()
     height_ = heightSet.get()
@@ -343,11 +351,8 @@ def measure():
     imageA = cv2.imread("initial.jpg")
     roiA = imageA[upper_left[1]: bottom_right[1],
                   upper_left[0]: bottom_right[0]]
-    # gray = cv2.cvtColor(roiA, cv2.COLOR_BGR2GRAY)
-    gray, gray_norm = convert(roiA)
-    # while True:
+    # gray, gray_norm, mask = convert(roiA)
     ret, image = cap.read()
-    # image = controller(image)
 
     if ret:
         cv2.rectangle(image.copy(), upper_left, bottom_right, (0, 50, 200), 2)
@@ -355,31 +360,43 @@ def measure():
         roi = image[upper_left[1]: bottom_right[1],
                     upper_left[0]: bottom_right[0]]
 
-        # grayB = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        grayB, grayB_norm = convert(roi)
+        grayB,gray_shadow = convert(roi)
+        gray,mask = convert(roiA+gray_shadow)
+        # cv2.imshow("before addition", gray)
+        # gray,mask = convert(roiA + gray_shadow)
+        # gray = gray + gray_shadow 
+        # grayB = grayB + gray_shadow 
+        cv2.imshow("after addition", gray) 
+        cv2.imshow("gray_shadow", gray_shadow)
+        cv2.imshow("compare 2", grayB)
         (score, diff) = compare_ssim(gray, grayB, full=True)
-        # print(score)
         diff = (diff * 255).astype("uint8")
+
+        # diff = gray - grayB
 
         edged = cv2.threshold(diff, 0, 255,
                               cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+        
+        # edged_shadow= cv2.threshold(gray_shadow, 0, 255,
+        #                       cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
 
+        cv2.imshow("edged",edged)
+        # edged = edged - gray_shadow
+        # cv2.imshow("edged after",edged)
         cnts = cv2.findContours(edged.copy(), cv2.RETR_EXTERNAL,
                                 cv2.CHAIN_APPROX_SIMPLE)
-        # cnts = cv2.findContours(edged, cv2.RETR_EXTERNAL,
-        #                         cv2.CHAIN_APPROX_SIMPLE)
-        # print(cnts)
+        
         if(cnts != ([], None)):
             cnts = imutils.grab_contours(cnts)
             (cnts, _) = contours.sort_contours(cnts)
 
             for c in cnts:
-                print("Area : " + str(cv2.contourArea(c)))
-                if(biggestContour >cv2.contourArea(c)):
-                    continue
-                else:
-                    biggestContour = cv2.contourArea(c)
-                    print("Biggest : " + str(biggestContour))
+                # print("Area : " + str(cv2.contourArea(c)))
+                # if(biggestContour > cv2.contourArea(c)):
+                #     continue
+                # else:
+                #     biggestContour = cv2.contourArea(c)
+                    # print("Biggest : " + str(biggestContour))
 
                 # if (cv2.contourArea(c) < 10000):
                 # if (cv2.contourArea(c) < 5000):
@@ -422,19 +439,9 @@ def measure():
                     dA = dist.euclidean((tltrX, tltrY), (blbrX, blbrY))
                     dB = dist.euclidean((tlblX, tlblY), (trbrX, trbrY))
 
-                    # for i in range(10):
-                    #     vals = []
-                    #     for i in range(10):
-                    #         if ser:
-                    #             Height = ser.readline().decode('utf-8').rstrip()
-                    #             time.sleep(0.01)
-                    #             # print(str(i) + " : " + str(Height))
-                    #             vals.append(Height)
-
-                    # Height = mostFrequent(vals, len(vals))
+                    ser.open()
                     Height = findHeight()
-                    # Height = float(Height)/10
-
+                    ser.close()
                     height = BaseHeight - Height
 
                     # if(height > 20):
@@ -502,7 +509,6 @@ def measure():
                     image = ImageTk.PhotoImage(Image.fromarray(img1))
                     cv2.imshow("Snapshot", cv2.cvtColor(
                         img1, cv2.COLOR_BGR2RGB))
-                    cv2.imshow("Snapshot2", edged)
                     L1['image'] = image
                     root.update()
 

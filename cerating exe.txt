@@ -1,0 +1,1 @@
+ pyinstaller.exe DMS_main.py --onedir -n DMS -w --noconfirm  -n DMS
